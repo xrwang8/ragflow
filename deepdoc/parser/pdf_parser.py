@@ -1431,7 +1431,27 @@ class VisionParser(RAGFlowPdfParser):
         try:
             with sys.modules[LOCK_KEY_pdfplumber]:
                 self.pdf = pdfplumber.open(fnm) if isinstance(fnm, str) else pdfplumber.open(BytesIO(fnm))
-                self.page_images = [p.to_image(resolution=72 * zoomin).annotated for i, p in enumerate(self.pdf.pages[page_from:page_to])]
+                rendered_images = []
+                for page in self.pdf.pages[page_from:page_to]:
+                    try:
+                        page_image = page.to_image(resolution=72 * zoomin)
+                        pil_image = getattr(page_image, "original", None)
+                        if pil_image is None and hasattr(page_image, "annotated"):
+                            pil_image = page_image.annotated
+                        if pil_image is None and hasattr(page_image, "image"):
+                            pil_image = page_image.image
+                        if pil_image is None and hasattr(page_image, "make_image"):
+                            pil_image = page_image.make_image()
+                        if pil_image is not None and hasattr(pil_image, "convert"):
+                            if pil_image.mode != "RGB":
+                                pil_image = pil_image.convert("RGB")
+                            rendered_images.append(pil_image)
+                        else:
+                            rendered_images.append(None)
+                    except Exception:
+                        logging.exception("VisionParser __images__ page render")
+                        rendered_images.append(None)
+                self.page_images = rendered_images
                 self.total_page = len(self.pdf.pages)
         except Exception:
             self.page_images = None
@@ -1450,9 +1470,16 @@ class VisionParser(RAGFlowPdfParser):
 
         all_docs = []
 
-        for idx, img_binary in enumerate(self.page_images or []):
+        page_images = self.page_images or []
+        total_images = len(page_images)
+
+        for idx, img_binary in enumerate(page_images):
             pdf_page_num = idx  # 0-based
             if pdf_page_num < start_page or pdf_page_num >= end_page:
+                continue
+
+            if img_binary is None:
+                logging.warning("VisionParser: missing rendered image for page %s", pdf_page_num + 1)
                 continue
 
             text = picture_vision_llm_chunk(
@@ -1462,11 +1489,11 @@ class VisionParser(RAGFlowPdfParser):
                 callback=callback,
             )
 
-            if kwargs.get("callback"):
-                kwargs["callback"](idx * 1.0 / len(self.page_images), f"Processed: {idx + 1}/{len(self.page_images)}")
+            if kwargs.get("callback") and total_images:
+                kwargs["callback"]((idx + 1) * 1.0 / total_images, f"Processed: {idx + 1}/{total_images}")
 
             if text:
-                width, height = self.page_images[idx].size
+                width, height = img_binary.size
                 all_docs.append((
                     text,
                     f"@@{pdf_page_num + 1}\t{0.0:.1f}\t{width / zoomin:.1f}\t{0.0:.1f}\t{height / zoomin:.1f}##"

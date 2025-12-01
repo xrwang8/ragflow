@@ -19,6 +19,7 @@ export enum FileType {
 export enum PdfOutputFormat {
   Json = 'json',
   Markdown = 'markdown',
+  Text = 'text',
 }
 
 export enum SpreadsheetOutputFormat {
@@ -28,6 +29,7 @@ export enum SpreadsheetOutputFormat {
 
 export enum ImageOutputFormat {
   Text = 'text',
+  Markdown = 'markdown',
 }
 
 export enum EmailOutputFormat {

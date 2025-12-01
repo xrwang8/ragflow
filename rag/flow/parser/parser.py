@@ -48,6 +48,7 @@ class ParserParam(ProcessParamBase):
             "pdf": [
                 "json",
                 "markdown",
+                "text",
             ],
             "spreadsheet": [
                 "json",
@@ -63,6 +64,7 @@ class ParserParam(ProcessParamBase):
             ],
             "image": [
                 "text",
+                "markdown",
             ],
             "email": [
                 "text",
@@ -334,9 +336,10 @@ class Parser(ProcessBase):
         if table_ctx or image_ctx:
             bboxes = attach_media_context(bboxes, table_ctx, image_ctx)
 
-        if conf.get("output_format") == "json":
+        output_format = (conf.get("output_format") or "").lower()
+        if output_format == "json":
             self.set_output("json", bboxes)
-        if conf.get("output_format") == "markdown":
+        elif output_format == "markdown":
             mkdn = ""
             for b in bboxes:
                 if b.get("layout_type", "") == "title":
@@ -344,8 +347,17 @@ class Parser(ProcessBase):
                 if b.get("layout_type", "") == "figure":
                     mkdn += "\n![Image]({})".format(VLM.image2base64(b["image"]))
                     continue
-                mkdn += b.get("text", "") + "\n"
+                mkdn += (b.get("text", "") or "") + "\n"
             self.set_output("markdown", mkdn)
+        elif output_format == "text":
+            text_chunks: list[str] = []
+            for b in bboxes:
+                text_val = b.get("text", "")
+                if isinstance(text_val, str):
+                    stripped = text_val.strip()
+                    if stripped:
+                        text_chunks.append(stripped)
+            self.set_output("text", "\n\n".join(text_chunks))
 
     def _spreadsheet(self, name, blob):
         self.callback(random.randint(1, 5) / 100.0, "Start to work on a Spreadsheet.")
@@ -606,7 +618,11 @@ class Parser(ProcessBase):
             else:
                 txt = cv_model.describe(img_binary.read())
 
-        self.set_output("text", txt)
+        output_format = (conf.get("output_format") or "").lower()
+        if output_format == "markdown":
+            self.set_output("markdown", txt)
+        else:
+            self.set_output("text", txt)
 
     def _audio(self, name, blob):
         import os

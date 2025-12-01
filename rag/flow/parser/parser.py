@@ -75,7 +75,7 @@ class ParserParam(ProcessParamBase):
                 "json",
             ],
             "audio": [
-                "json",
+                "text",
             ],
             "video": [],
         }
